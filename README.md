@@ -1,29 +1,37 @@
-# Source / Runtime / Delivery Audit
+# 源码、运行版本与交付包一致性审计
 
-An Agent Skill for checking a specific version-consistency claim across three different layers: editable source, a running service, and a delivered copy. It prevents a matching path, a green source test, or an internally valid package checksum from being mistaken for proof that all three layers run the same code.
+这是一个 Agent Skill，用来核查一项具体修复或功能是否同时存在于**可编辑源码、正在运行的服务、交付副本**中。路径相同、源码测试通过，或交付包自己的校验清单正确，都不能单独证明三者一致。
 
-The Skill is intentionally narrow. It is not a security scanner, deployment tool, full-package verifier, or replacement for runtime behavior tests.
+本 Skill 只处理有明确版本或交付主张的一致性审计；它不是安全扫描器、部署工具、完整安装包验证器，也不能替代实际运行测试。
 
-## Use
+## 使用方式
 
-Install this directory as `source-runtime-delivery-audit` in your agent's skills directory, then ask the agent to check whether a named fix or feature in source is present in the running service and the delivered copy. The agent reads [`SKILL.md`](SKILL.md) and reports a claim-by-claim evidence matrix.
+将整个目录放入 Agent 的 Skills 目录，目录名保持为 `source-runtime-delivery-audit`。随后可以这样提问：
 
-The included comparison script is read-only and uses only the Python standard library:
+> 请核查这次修复在当前源码、正在运行的服务和交付包中是否一致，并分别列出证据与未知项。
+
+Agent 会读取 [SKILL.md](SKILL.md)，按“主张、源码、运行、交付、行为、证据缺口”分别判断。附带的文件对照脚本只读运行，且只依赖 Python 标准库：
 
 ```text
-python scripts/compare_release_files.py --source SOURCE_ROOT --delivery DELIVERY_ROOT --manifest checksums/SHA256SUMS.txt path/to/file.py
+python scripts/compare_release_files.py --source 源码目录 --delivery 交付目录 --manifest checksums/SHA256SUMS.txt path/to/file.py
 ```
 
-`--manifest` is optional. List only the small files relevant to the claim. The default per-file limit is 16 MiB, and the manifest limit is 16 MiB. Exit code 0 means only that the **selected independent files** match and, if requested, their manifest entries match. Exit code 1 means the selected evidence does not pass; 2 means the comparison was rejected. Output always says `runtime_verified: false` because the script does not inspect a running process.
+`--manifest` 可省略。请只列出与本次主张直接相关的小文件。单文件默认读取上限为 16 MiB，校验清单上限为 16 MiB。
 
-The script rejects path escapes and common credential filenames, but filenames cannot reveal every secret. Review selected paths before using the tool or sharing its output. A running process can also keep old Python code loaded after its file changes on disk; use a startup-captured revision or a controlled restart plus behavior evidence when runtime identity matters.
+- 退出码 `0`：**本次选定且相互独立的文件**字节一致；如指定清单，其对应条目也一致。
+- 退出码 `1`：选定证据不满足一致条件。
+- 退出码 `2`：输入被拒绝或无法安全比较。
 
-## Validation
+脚本始终输出 `runtime_verified: false`，因为它不会检查运行进程。脚本会拒绝目录逃逸和常见凭据文件名，但文件名过滤无法发现藏在普通文件中的秘密；运行前和分享结果前仍需人工检查所选路径。
 
-Run `python -m pytest tests -q` after installing `pytest` for the test suite. The tests cover stale delivery copies with internally valid checksums, missing and shared files, path and size boundaries, CLI exit codes, and the difference between loaded Python code and current disk bytes. One real hard-link creation test may skip where the environment does not permit hard links.
+Python 进程导入模块后，即使磁盘文件发生变化，内存里仍可能执行旧代码。需要核实运行版本时，应使用启动时记录的版本标识，或从确定的产物重新启动后验证行为；证据不足就标记为“未知”。
 
-The Skill has been tried against one real project and in an independent read-only Agent trial. That evidence supports its bounded workflow; it does not establish effectiveness across every stack or prove that a particular running service has been verified.
+## 验证与边界
 
-## License
+安装 `pytest` 后运行 `python -m pytest tests -q`。测试覆盖过期交付包但清单自洽、文件缺失、共享文件实体、路径与大小边界、退出码，以及“磁盘内容不等于进程已加载代码”的案例。当前环境若不能创建真实硬链接，相应测试会跳过。
 
-MIT. See [LICENSE](LICENSE).
+该 Skill 已在一个真实工程中试用，并做过一次独立 Agent 只读盲测。这些证据支持其**限定范围内**的工作流程，不证明它适用于所有技术栈，也不证明任何具体服务的运行版本已核实。
+
+## 许可证
+
+MIT，见 [LICENSE](LICENSE)。
