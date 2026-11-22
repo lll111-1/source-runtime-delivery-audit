@@ -1,28 +1,30 @@
 ---
 name: source-runtime-delivery-audit
-description: Use when checking whether an editable source tree, a running local service, and a delivered copy contain the same version of a fix or feature. Do not use for ordinary code review or a generic security audit without a version or delivery claim.
+description: 当需要核查可编辑源码、正在运行的本地服务与交付副本是否包含同一修复或功能版本时使用；普通代码审查或没有版本主张的安全审计不适用。
 ---
 
-# Source, runtime, and delivery evidence
+# 源码、运行与交付证据
 
-The three layers can disagree even when their paths look identical. Establish the exact claim and inspect only its relevant files and runtime resources.
+即使路径字符串相同，源码、运行进程和交付副本也可能不一致。先明确要核实的具体主张，只检查与该主张相关的文件和运行资源。
 
-## Source
+## 源码
 
-Record the editable root, Git commit/branch and relevant working-tree changes. Read the entrypoint and callers that produce the claimed behavior. A source test proves only that source under the tested inputs; it does not prove a running process or package uses those bytes.
+记录可编辑工作区、Git 提交/分支及相关未提交修改。阅读产生该行为的入口与调用路径。源码测试只证明被测源码在对应输入下的结果，不能证明运行服务或交付包使用了这些字节。
 
-## Runtime
+## 运行
 
-Ask the running process for its own loaded module path, resolved data/static roots, and file identity (size, stat identity, SHA-256 where practical). Pair that with PID, parent and launch command. A reported cwd or matching path string alone is insufficient when overlays, copies, junctions, or hard links may exist. **Hashing the path after import proves current disk bytes, not the code already loaded in memory.** To bind loaded code to a revision, prefer a build identifier or hash captured at process startup, or restart from a known artifact and verify behavior. If that evidence is unavailable, mark loaded-code identity unknown. Verify observed behavior separately from file identity.
+优先让运行进程报告实际加载的模块路径、解析后的数据/静态目录，以及可取得的文件身份（大小、文件实体、SHA-256）。同时记录 PID、父进程与启动命令。工作目录或路径字符串相同仍不足以排除隔离视图、副本、目录联接和硬链接。
 
-When process inspection is restricted, try only available read-only evidence in order: an existing health/status response, startup logs with PID and launch command, then a process-reported module/data path or startup-captured revision if the service already exposes one. Record which check was denied; no response or an inaccessible process list does **not** prove the service is stopped. A generic version string or a current file hash does not prove loaded-code identity. Prove the launcher used to start the service separately from the Python modules it loaded; matching launcher bytes alone cannot establish either runtime code or behavior. Do not restart or instrument a service just to complete an audit unless that action is separately authorized.
+**模块导入后再计算路径上的哈希，只能证明当前磁盘文件内容，不能证明内存中已加载代码的版本。** 优先使用进程启动时捕获的构建标识/哈希；也可从确定产物重新启动并验证行为。无法取得这种证据时，把已加载代码身份标为“未知”。文件身份与功能行为分别验证。
 
-## Delivery
+若进程查询受限，依次尝试已有的只读健康/状态接口、含 PID 与启动命令的启动日志、服务已提供的模块/数据路径或启动版本标识。记录哪项检查被拒绝；接口不通或进程列表不可访问**不等于**服务未运行。通用版本字符串和事后磁盘哈希也不能证明已加载代码。启动脚本是否被使用、Python 模块实际加载版本、业务行为应分别举证。未获单独授权时，不为完成审计而重启或修改服务。
 
-Use [compare_release_files.py](scripts/compare_release_files.py) for an explicit list of small source files and a delivery directory. Pass `--manifest` only when the package has a SHA256SUMS-style manifest. The tool refuses path escape and sensitive paths, caps reads, and treats a shared file entity as non-independent. Exit 0 means only that the selected independent bytes match and, if requested, their manifest entries match. It never proves the entire package or runtime behavior. Do not hash or overwrite large model artifacts to make this comparison pass.
+## 交付
 
-The sensitive-path filter catches common names, not secrets hidden in ordinary files. Review the selected paths before running the helper or publishing its output; never feed it credentials merely because their filenames look harmless.
+对明确列出的小型源码文件和交付目录，使用 [compare_release_files.py](scripts/compare_release_files.py)。只有交付包存在 SHA256SUMS 格式清单时才传入 `--manifest`。工具拒绝路径逃逸和常见敏感路径、限制读取大小，并把共享文件实体判为非独立证据。退出码 0 仅证明**选定的独立文件**字节一致，且所请求的清单条目一致；它不证明完整交付包或运行行为。不要为了让对照通过而读取或覆盖大型模型产物。
 
-## Decision
+敏感路径过滤只能识别常见文件名，无法发现普通文件名下的秘密。运行工具或公开结果前仍须审核选定路径。
 
-Report `claim | source evidence | runtime evidence | delivery evidence | behavior evidence | open gap`. Keep each conclusion at its proven layer. A failing or missing layer blocks a cross-layer PASS; it need not block unrelated source work. Preserve existing files and checkpoints. Never copy, convert, delete, deploy, commit, or publish artifacts merely because an audit found a mismatch.
+## 结论
+
+逐项报告：`主张 | 源码证据 | 运行证据 | 交付证据 | 行为证据 | 仍缺什么`。每个结论只覆盖有证据的层级；任一必要层缺失，就不能宣布跨层通过，但不妨碍无关的源码工作。保留已有文件与检查点。审计发现差异本身不授权复制、转换、删除、部署、提交或发布产物。
